@@ -64,6 +64,7 @@ class BT(object):
         self.buf = []
         self.lock = threading.Lock()
         self.handlers = []
+        self.disconnected = False
 
     ## internal data-handling methods
     def recv_packet(self, timeout=None):
@@ -71,14 +72,24 @@ class BT(object):
         self.ser.timeout = None
         while timeout is None or time.time() < t0 + timeout:
             if timeout is not None: self.ser.timeout = t0 + timeout - time.time()
-            c = self.ser.read()
+
+            try:
+                #print("R")
+                c = self.ser.read()
+                #print("P")
+            except serial.SerialException as e:
+                c = None
+                self.disconnected = True
+                print("device reports readiness to read but returned no data (device disconnected?)")
+
             if not c: return None
 
             ret = self.proc_byte(ord(c))
             if ret:
                 if ret.typ == 0x80:
-                    self.handle_event(ret)
+                    self.handle_event(ret)       
                 return ret
+
 
     def recv_packets(self, timeout=.5):
         res = []
@@ -160,6 +171,11 @@ class BT(object):
         while True:
             p = self.recv_packet()
 
+            # CAREFUL THIS MAY BE BAD -Chris
+            if(p == None):
+                print( "skipping packet")
+                continue
+
             ## no timeout, so p won't be None
             if p.typ == 0: return p
 
@@ -186,13 +202,13 @@ class MyoRaw(object):
         self.pose_handlers = []
         self.device_name = ""
         self.initialized = False
-        self.ttyIndex = -1
+        self.tty_index = -1
 
     def detect_tty(self):
         for p in comports():
             if re.search(r'PID=2458:0*1', p[2]) and not MyoRaw.isInUse(p[0]):
                 print('using device:', p[0])
-                self.tty_index = len(MyoRaw.in_use_tty)
+                self.tty_index = len(MyoRaw.in_use_tty)-1
                 MyoRaw.in_use_tty.append(p[0])
                 return p[0]
 
@@ -415,7 +431,8 @@ class MyoRaw(object):
         for h in self.arm_handlers:
             h(arm, xdir)
 
-    def unblock_tty():
+    def unblock_tty(self):
+        print("unblocked!")
         del MyoRaw.in_use_tty[self.tty_index]
 
 if __name__ == '__main__':
