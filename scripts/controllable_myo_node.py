@@ -160,12 +160,12 @@ class MyThread(Thread):
         elif(MyThread.t1.m != None):
             MyThread.t1.m.m.initialized = False
 
-        if(MyThread.t2 == None):
+        if(myoCount > 1 and MyThread.t2 == None):
             MyThread.t2 = MyThread()
             MyThread.t2.daemon = True
             MyThread.t2.start();
             sleep(1)
-        elif(MyThread.t2.m != None):
+        elif(MyThread.t2 != None and MyThread.t2.m != None):
             MyThread.t2.m.m.initialized = False
 
         while not MyThread.isInitialized(MyThread.t1) or (myoCount > 1 and not MyThread.isInitialized(MyThread.t2)):
