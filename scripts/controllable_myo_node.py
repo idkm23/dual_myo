@@ -3,7 +3,7 @@
 import rospy
 from std_msgs.msg import Header, Int32
 from geometry_msgs.msg import Quaternion, Vector3, Pose, PoseStamped, Point
-from myo_raw.msg import Gesture, EMGData, MyoArm, IMUData
+from myo_raw.msg import Gesture, EMGData, MyoArm, IMUData, EMGIMU
 from myo.myo import Myo, NNClassifier
 from myo.myo_raw import MyoRaw
 
@@ -77,6 +77,7 @@ class MyoNode(object):
     
     def __on_emg(self, emg, moving):
         self.pub_emg.publish(emg_data=emg, moving=moving)
+        self.emg = emg
 
     def __on_raw_pose(self, p):
         self.pub_pose.publish(is_builtin=False, pose_number=p, confidence=0.0)
@@ -85,18 +86,12 @@ class MyoNode(object):
         # need to switch the yaw and the roll for some reason
         euler = tf.transformations.euler_from_quaternion((quat[0], quat[1], quat[2], quat[3])) # roll, pitch, yaw
         
-        self.pub_imu.publish(header=Header(frame_id=rospy.get_param('frame_id', 'map'), stamp=rospy.get_param('stamp', None)),
-                             orientation=Vector3(x=euler[0]*180/pi, y=euler[1]*180/pi, z=euler[2]*180/pi),
-                             angular_velocity=Vector3(x=gyro[0], y=gyro[1], z=gyro[2]),
-                             linear_acceleration=Vector3(x=acc[0]/MYOHW_ACCELEROMETER_SCALE, 
-                             y=acc[1]/MYOHW_ACCELEROMETER_SCALE, z=acc[2]/MYOHW_ACCELEROMETER_SCALE))
-
         if self.baseRot == None:
             self.count += 1;
 
             # This subtraction '(60 * pi / 180.0)' is here to create an initial offset which matches a hand's natural initial offset
             if self.count > 360:
-                self.baseRot = euler[0]# - ((60 * pi / 180.0) if self.identifier == 'u' else 0)
+                self.baseRot = euler[0]
             return
 
         # need to switch the yaw and the roll for some reason   2    1     0
@@ -107,6 +102,20 @@ class MyoNode(object):
                                         y=rotated_quat[1], 
                                         z=rotated_quat[2], 
                                         w=rotated_quat[3]))
+
+        self.pub_imu.publish(header=Header(frame_id=rospy.get_param('frame_id', 'map'), stamp=rospy.get_param('stamp', None)),
+                               angular_velocity=Vector3(x=gyro[0], y=gyro[1], z=gyro[2]),
+                               linear_acceleration=Vector3(x=acc[0]/MYOHW_ACCELEROMETER_SCALE, y=acc[1]/MYOHW_ACCELEROMETER_SCALE, z=acc[2]/MYOHW_ACCELEROMETER_SCALE),
+                               orientation=Quaternion(x=rotated_quat[0], y=rotated_quat[1], z=rotated_quat[2], w=rotated_quat[3])
+                               )
+
+        if self.emg:
+            self.pub_emgimu.publish(header=Header(frame_id=rospy.get_param('frame_id', 'map'), stamp=rospy.get_param('stamp', None)),
+                               emg=self.emg,
+                               angular_velocity=gyro,
+                               linear_acceleration=[acc[0]/MYOHW_ACCELEROMETER_SCALE, acc[1]/MYOHW_ACCELEROMETER_SCALE, acc[2]/MYOHW_ACCELEROMETER_SCALE],
+                               orientation=[rotated_quat[0], rotated_quat[1], rotated_quat[2], rotated_quat[3]]
+                               )
 
     def run(self): # note this function is EXTREMELY time sensitive... delay will cause a disconnect of the myo
         try:    
@@ -178,6 +187,7 @@ class MyThread(Thread):
 
                 print("aftersleep1")
                 MyThread.t1.join()
+                MyThread.t1.m.m.bt.disconnected = False;
                 MyThread.t1.m.keepScanning = True
                 MyThread.t1 = MyThread(MyThread.t1.m)
                 MyThread.t1.m.m.connect()
@@ -193,6 +203,7 @@ class MyThread(Thread):
                 if myoCount > 1:
                     MyThread.t2.join()
                     MyThread.t2.m.keepScanning = True
+                    MyThread.t2.m.m.bt.disconnected = False;
                     MyThread.t2 = MyThread(MyThread.t2.m)
                     MyThread.t2.m.m.connect()
                     MyThread.t2.start()

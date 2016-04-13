@@ -1,2 +1,4 @@
 training_data/
 vals*
+*.bag
+*.bag.active

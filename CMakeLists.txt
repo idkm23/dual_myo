@@ -46,6 +46,7 @@ add_message_files(
   Gesture.msg
   MyoArm.msg
   IMUData.msg
+  EMGIMU.msg
 )
 
 
