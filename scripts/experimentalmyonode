@@ -10,6 +10,7 @@ from myo.myo_raw import MyoRaw
 from time import sleep
 from threading import Thread
 
+import datetime
 import tf
 import ctypes
 import rospkg
@@ -47,7 +48,7 @@ class MyoNode(object):
         self.pub_myo_arm = rospy.Publisher('/myo/' + self.identifier + '/arm',     MyoArm,      queue_size=10, latch=True)
         self.pub_ort     = rospy.Publisher('/myo/' + self.identifier + '/ort',     Quaternion,  queue_size=10)
         self.pub_emgimu  = rospy.Publisher('/myo/' + self.identifier + '/emgimu',  EMGIMU,      queue_size=10)
-        
+
         self.downsampler = 0
         self.baseRot = None 
         self.count = 0 
@@ -139,11 +140,17 @@ class MyThread(Thread):
         Thread.__init__(self)
         self.m = myo
 
+    def run(self):
         if(self.m == None):
             self.m = MyoNode()
 
-    def run(self):
         self.m.run()
+
+    def waitToInit(self, timeout=0):
+        startTime = datetime.datetime.now()
+        while (datetime.datetime.now() - startTime).total_seconds() < timeout and not MyThread.isInitialized(self):
+            print "a"
+            sleep(0.1)
 
     @staticmethod
     def isInitialized(thread):
@@ -160,13 +167,11 @@ class MyThread(Thread):
     def startMyo(myoCount):
         myoCount = myoCount.data
 
-
-
         if(MyThread.t1 == None):
             MyThread.t1 = MyThread()
             MyThread.t1.daemon = True
             MyThread.t1.start();        
-            sleep(1)
+            MyThread.t1.waitToInit(timeout=5)
         elif(MyThread.t1.m != None):
             MyThread.t1.m.m.initialized = False
 
@@ -174,41 +179,45 @@ class MyThread(Thread):
             MyThread.t2 = MyThread()
             MyThread.t2.daemon = True
             MyThread.t2.start();
-            sleep(1)
+            MyThread.t2.waitToInit(timeout=5)
         elif(MyThread.t2 != None and MyThread.t2.m != None):
             MyThread.t2.m.m.initialized = False
 
         while not MyThread.isInitialized(MyThread.t1) or (myoCount > 1 and not MyThread.isInitialized(MyThread.t2)):
 
             if not MyThread.isInitialized(MyThread.t1):
-                MyThread.t1.m.keepScanning = False
-                sleep(1)
-                MyThread.t1.m.disconnect()
-                sleep(1)
+                if MyThread.t1.m != None:
+                    MyThread.t1.m.keepScanning = False
+                    sleep(1)
+                    MyThread.t1.m.disconnect()
+                    sleep(1)
+                    MyThread.t1.m.m.unblock_tty()
 
                 print("aftersleep1")
-                MyThread.t1.join()
-                MyThread.t1.m.m.bt.disconnected = False;
-                MyThread.t1.m.keepScanning = True
-                MyThread.t1 = MyThread(MyThread.t1.m)
-                MyThread.t1.m.m.connect()
+                MyThread.t1.join(1)
+                if MyThread.t1.isAlive() == True:
+                    print("thread1 wouldnt die")
+
+                MyThread.t1 = MyThread()
                 MyThread.t1.start()
-                sleep(1)
+                MyThread.t1.waitToInit(timeout=5)
 
             if not MyThread.isInitialized(MyThread.t2):
-                MyThread.t2.m.keepScanning = False
-                sleep(1)
-                MyThread.t2.m.disconnect()
-                sleep(1)
+                if MyThread.t2 != None and MyThread.t2.m != None:
+                    MyThread.t2.m.keepScanning = False
+                    sleep(1)
+                    MyThread.t2.m.disconnect()
+                    sleep(1)
+                    MyThread.t1.m.m.unblock_tty()
+                    MyThread.t2.join(1)
+
+                    if MyThread.t2.isAlive() == True:
+                        print("thread2 wouldnt die")
 
                 if myoCount > 1:
-                    MyThread.t2.join()
-                    MyThread.t2.m.keepScanning = True
-                    MyThread.t2.m.m.bt.disconnected = False;
-                    MyThread.t2 = MyThread(MyThread.t2.m)
-                    MyThread.t2.m.m.connect()
+                    MyThread.t2 = MyThread()
                     MyThread.t2.start()
-                    sleep(1)
+                    MyThread.t2.waitToInit(timeout=5)
 
         MyThread.calibrateMyo(myoCount)
         print("leftcallback")

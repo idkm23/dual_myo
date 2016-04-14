@@ -171,10 +171,11 @@ class BT(object):
         while True:
             p = self.recv_packet()
 
-            # CAREFUL THIS MAY BE BAD -Chris
+            # Device has some issue, so rather than letting the system crash, we disconnect the device
             if(p == None):
                 print( "skipping packet")
-                continue
+                self.disconnected = True
+                break;
 
             ## no timeout, so p won't be None
             if p.typ == 0: return p
